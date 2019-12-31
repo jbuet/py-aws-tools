@@ -1,10 +1,7 @@
 #!/usr/local/bin/python3
-import csv
 import re
-from collections import OrderedDict
-from pprint import pprint
-from prettytable import PrettyTable
 
+from prettytable import PrettyTable
 import boto3
 import click
 from botocore.exceptions import ClientError
@@ -19,25 +16,49 @@ def cli():
     '''
     pass
 
-
 @cli.command()
 @click.argument('regions', nargs=-1)
-def volumes_available(regions):
+@click.option('--all/-a', default = False, help = "Check on all regions")
+@click.option('--debug/-d', default = False, help = "Show all messages for debug")
+def volumes_available(regions, all, debug):
     '''
-    Find unreferenced snapshots.
+    Find available volumes.
     '''
     global ec2
+
+    if (all):
+        ec2 = boto3.client('ec2')
+        regions = list_all_regions()
+
     for region in regions:
         ec2 = boto3.client('ec2', region_name=region)
         table = PrettyTable(['id', 'create_time', 'status', 'size', 'snapshot_id', 'snapshot_exists'])
         for volume in get_available_volumes():
-            table.add_row([volume['id'], volume['create_time'], volume['status'],volume['size'], volume['snapshot_id'],volume['snapshot_exists']   ])
-        print (table)
+                table.add_row([volume['id'], volume['create_time'], volume['status'],volume['size'], volume['snapshot_id'],volume['snapshot_exists']   ])
+
+        if (len(list(table)) == 0):
+            if debug:
+                print (f'There is no available volumes on the region: {region}')
+        else:
+            print ('\b')
+            print ('-----------------------------')
+            print (f"Resources on region {region}")
+            print (table)
+
+
+def list_all_regions():
+    list_all_regions = []
+
+    response = ec2.describe_regions()
+
+    for region in response['Regions']:
+        list_all_regions.append(region['RegionName'])
+    return list_all_regions
 
          
 def get_available_volumes():
     '''
-    Get all volumes in 'available' state. (Volumes not attached to any instance)
+    Get all volumes in available state.
     '''
     for volume in ec2.describe_volumes(Filters=[{'Name': 'status', 'Values': ['available']}])['Volumes']:
         yield {
@@ -46,11 +67,11 @@ def get_available_volumes():
             'status': volume['State'],
             'size': volume['Size'],
             'snapshot_id': volume['SnapshotId'],
-            'snapshot_exists': str(snapshot_exists(volume['SnapshotId']))
+            'snapshot_exists': str(check_snapshot_exists(volume['SnapshotId']))
         }
 
 
-def snapshot_exists(snapshot_id):
+def check_snapshot_exists(snapshot_id):
     if not snapshot_id:
         return ''
     try:
@@ -60,4 +81,4 @@ def snapshot_exists(snapshot_id):
         return False
 
 if __name__ == '__main__':
-    cli()
+    cli()   
