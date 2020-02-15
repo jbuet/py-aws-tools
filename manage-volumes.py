@@ -5,6 +5,7 @@ from prettytable import PrettyTable
 import boto3
 import click
 from botocore.exceptions import ClientError
+import sys
 
 
 ec2 = None
@@ -16,10 +17,14 @@ def cli():
     '''
     pass
 
+def print_debug(debug,message):
+    if (debug):
+      print (message)
+
 @cli.command()
 @click.argument('regions', nargs=-1)
-@click.option('--all/-a', default = False, help = "Check on all regions")
-@click.option('--debug/-d', default = False, help = "Show all messages for debug")
+@click.option('-A','--all', default = False,is_flag = True, help = "Check on all regions")
+@click.option('-d','--debug', default = False, is_flag= True, help = "Show all messages for debug")
 def volumes_available(regions, all, debug):
     '''
     Find available volumes.
@@ -27,18 +32,29 @@ def volumes_available(regions, all, debug):
     global ec2
 
     if (all):
-        ec2 = boto3.client('ec2')
-        regions = list_all_regions()
+        try:
+            ec2 = boto3.client('ec2')
+            print_debug(debug,"Listing resources on all regions. Be Patient.")
+            regions = list_all_regions()
+        except Exception as e:
+            print (e)
+            sys.exit(1)
+    elif (len(regions) == 0):
+        click.echo('Add at least one region')
 
     for region in regions:
-        ec2 = boto3.client('ec2', region_name=region)
+        try:
+            ec2 = boto3.client('ec2', region_name=region)
+        except Exception as e:
+            print (e)
+            sys.exit(1)
+
         table = PrettyTable(['id', 'create_time', 'status', 'size', 'snapshot_id', 'snapshot_exists'])
         for volume in get_available_volumes():
                 table.add_row([volume['id'], volume['create_time'], volume['status'],volume['size'], volume['snapshot_id'],volume['snapshot_exists']   ])
 
         if (len(list(table)) == 0):
-            if debug:
-                print (f'There is no available volumes on the region: {region}')
+            print_debug(debug,f'There is no available volumes on the region: {region}')
         else:
             print ('\b')
             print ('-----------------------------')
@@ -47,6 +63,9 @@ def volumes_available(regions, all, debug):
 
 
 def list_all_regions():
+    '''
+    Get a list of all available regions
+    '''
     list_all_regions = []
 
     response = ec2.describe_regions()
@@ -72,6 +91,9 @@ def get_available_volumes():
 
 
 def check_snapshot_exists(snapshot_id):
+    '''
+    Verifies if a snapshot exists.
+    '''
     if not snapshot_id:
         return ''
     try:
